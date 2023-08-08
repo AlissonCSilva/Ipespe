@@ -1,0 +1,82 @@
+# Carregar as bibliotecas necessárias
+library(dplyr)
+library(tidyr)
+
+# Carregar os dados
+data_nomes <- read.csv('votacao_candidato_munzona_2012_BRASIL.csv', sep = ';', encoding='ISO-8859-1', on_bad_lines='skip')
+
+# Definir a função andromeda_IPESPE
+andromeda_IPESPE <- function(state_code) {
+  
+  # Filtrar dados pelo estado
+  new <- data_nomes[data_nomes$SG_UF == state_code, ]
+  
+  filename <- paste0('votacao_secao_2012_', state_code, '.csv')
+  dataframe_final <- read.csv(filename, sep = ';', encoding='ISO-8859-1', on_bad_lines='skip')
+  
+  colunas_para_dropar <- c('DT_GERACAO', 'CD_MUNICIPIO', 'CD_CARGO', 'HH_GERACAO', 'NM_TIPO_ELEICAO', 'DS_ELEICAO', 'CD_TIPO_ELEICAO', 'DT_ELEICAO', 'TP_ABRANGENCIA', 'CD_ELEICAO')
+  df <- dataframe_final %>% select(-colunas_para_dropar)
+  
+  # Criar coluna SOMA_QT_VOTOS
+  df <- df %>% 
+    group_by(DS_CARGO, NM_VOTAVEL, NR_ZONA, NR_SECAO, NM_MUNICIPIO) %>% 
+    mutate(SOMA_QT_VOTOS = sum(QT_VOTOS)) %>% 
+    ungroup() %>%
+    distinct(DS_CARGO, NM_VOTAVEL, NR_ZONA, NR_SECAO, NM_MUNICIPIO, .keep_all = TRUE)
+  
+  # Mesclar dados
+  df <- df %>% 
+    left_join(new %>% select(NM_MUNICIPIO, DS_CARGO, SG_UF, NM_CANDIDATO, SG_PARTIDO),
+              by = c('NM_MUNICIPIO', 'DS_CARGO', 'SG_UF', 'NM_VOTAVEL' = 'NM_CANDIDATO')) %>%
+    select(-NM_CANDIDATO) %>%
+    rename(SG_PARTIDO = SG_PARTIDO)
+  
+  df$SG_PARTIDO[is.na(df$SG_PARTIDO)] <- df$NM_VOTAVEL
+  
+  df <- df %>% drop_na() %>% 
+    distinct(NM_VOTAVEL, NR_ZONA, NR_SECAO, NM_MUNICIPIO, SG_PARTIDO, DS_CARGO, .keep_all = TRUE) %>% 
+    mutate(NR_SECAO = as.numeric(NR_SECAO),             # Converter para número
+           NR_SECAO = round(NR_SECAO, digits = 10),     # Arredondar
+           NR_SECAO = as.character(NR_SECAO))           # Converter de volta para texto
+  
+  df <- df %>% 
+    group_by(DS_CARGO, SG_PARTIDO, NM_MUNICIPIO, NR_ZONA, NR_SECAO, SG_UF) %>% 
+    mutate(SOMA_TOTAL = sum(SOMA_QT_VOTOS)) %>% 
+    ungroup()
+  
+  return(df)
+}
+
+# Chamar a função andromeda_IPESPE para diferentes estados
+AC <- andromeda_IPESPE(state_code = 'AC')
+# Repita para outros estados
+
+# Juntar resultados em um único dataframe
+resultado_1 <- bind_rows(AC, AL, AP, AM, BA, CE, ES, GO)
+
+# Repita o processo para outros estados
+# ...
+
+# Carregar os dados de perfil eleitoral
+gera_dado <- function(state_code) {
+  filename <- paste0('perfil_eleitor_secao_2008_', state_code, '.csv')
+  dataframe_final <- read.csv(filename, sep = ';', encoding='ISO-8859-1', on_bad_lines='skip')
+  
+  # Processar os dados para criar pivot table
+  # ...
+  
+  result <- pivot_table_result %>% 
+    mutate(todos = ANALFABETO + `ENSINO FUNDAMENTAL COMPLETO` + `ENSINO FUNDAMENTAL INCOMPLETO` + `ENSINO MÉDIO COMPLETO` + `ENSINO MÉDIO INCOMPLETO` + `LÊ E ESCREVE` + `SUPERIOR COMPLETO` + `SUPERIOR INCOMPLETO`)
+  
+  return(result)
+}
+
+# Chamar a função gera_dado para diferentes estados
+AC <- gera_dado(state_code = 'AC')
+# Repita para outros estados
+
+# Juntar resultados em um único dataframe
+dataframe <- bind_rows(RJ, MT, RN, SE, RS, PR, SP, PE, RR, RO, PI, PA, TO, SC, PB, MG, MS, GO, MA, MS, ES, CE, BA, AP, AL, AC, AM)
+
+# Mesclar dados de diferentes fontes
+merged_dataframe <- left_join(Base_primeiro_passo, dataframe, by = 'cod_secao_dado')
